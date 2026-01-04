@@ -411,7 +411,7 @@ public partial class MainViewModel : ObservableRecipient
                         string remainingSize = FormatFileSize(remainingBytes);
                         
                         // 更新进度消息，显示进度百分比和剩余大小
-                        ProgressMessage = $"进度:{progress}%,剩余{remainingSize}";
+                        ProgressMessage = $"进度:{progress}% , 剩余 {remainingSize}";
                         
                         // 确保进度值递增且只在变化时更新，避免频繁更新UI
                         if (newProgressValue > ProgressValue && newProgressValue != lastProgressUpdate)

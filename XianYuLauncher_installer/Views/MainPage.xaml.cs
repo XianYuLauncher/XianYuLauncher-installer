@@ -123,7 +123,7 @@ public sealed partial class MainPage : Page, INotifyPropertyChanged
     private void GitHubButton_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
         // 导航到指定的GitHub仓库URL
-        var uri = new Uri("https://github.com/XianYu-Launcher/XianYuLauncher-installer");
+        var uri = new Uri("https://github.com/XianYu-Launcher");
         var launcherOptions = new Windows.System.LauncherOptions();
         launcherOptions.TreatAsUntrusted = false;
         Windows.System.Launcher.LaunchUriAsync(uri, launcherOptions);
