@@ -46,8 +46,8 @@ This installer automates most of the process, providing a seamless experience fo
 ### Setup
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/XianYuLauncher-Installer.git
-cd XianYuLauncher-Installer
+git clone https://github.com/XianYuLauncher/XianYuLauncher-installer.git
+cd XianYuLauncher-installer
 
 # Restore NuGet packages
 dotnet restore
