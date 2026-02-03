@@ -26,6 +26,7 @@ public sealed partial class MainPage : Page, INotifyPropertyChanged
         _dispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
         
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+        ViewModel.Localization.PropertyChanged += Localization_PropertyChanged;
         UpdateUI();
         
         // 设置logo图片源
@@ -116,8 +117,14 @@ public sealed partial class MainPage : Page, INotifyPropertyChanged
 
     private void CompleteButton_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
-        ViewModel.OpenLauncherCommand.Execute(null);
-        ViewModel.ExitCommand.Execute(null);
+        if (RunLauncherCheckBox.IsChecked == true)
+        {
+            ViewModel.OpenLauncherCommand.Execute(null);
+        }
+        else
+        {
+            ViewModel.ExitCommand.Execute(null);
+        }
     }
 
     private void ExitButton_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
@@ -132,5 +139,18 @@ public sealed partial class MainPage : Page, INotifyPropertyChanged
         var launcherOptions = new Windows.System.LauncherOptions();
         launcherOptions.TreatAsUntrusted = false;
         Windows.System.Launcher.LaunchUriAsync(uri, launcherOptions);
+    }
+
+    private void LanguageButton_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        ViewModel.Localization.ToggleLanguage();
+    }
+
+    private void Localization_PropertyChanged(object sender, PropertyChangedEventArgs e)
+    {
+        if (_dispatcherQueue != null)
+        {
+            _dispatcherQueue.TryEnqueue(UpdateUI);
+        }
     }
 }

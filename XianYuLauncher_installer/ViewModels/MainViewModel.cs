@@ -9,6 +9,10 @@ using System.IO.Compression;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Linq;
+using Windows.Management.Deployment;
+using Windows.ApplicationModel;
+using XianYuLauncher_installer.Services;
 
 namespace XianYuLauncher_installer.ViewModels;
 
@@ -72,11 +76,24 @@ public partial class MainViewModel : ObservableRecipient
     private LatestVersionInfo _latestVersionInfo = null;
     private HttpClient _httpClient = new HttpClient();
 
-    public string[] StepTitles { get; } = { "欢迎使用", "正在安装", "证书配置", "正在安装", "安装完成" };
+    public LocalizationService Localization { get; }
 
-    public MainViewModel()
+    public string[] StepTitles => new[] { 
+        Localization.Strings.StepWelcome, 
+        Localization.Strings.StepInstalling, 
+        Localization.Strings.StepCert, 
+        Localization.Strings.StepInstalling, 
+        Localization.Strings.StepFinish 
+    };
+
+    public MainViewModel(LocalizationService localizationService)
     {
+        Localization = localizationService;
         Debug.WriteLine("MainViewModel initialized");
+        
+        _progressMessage = Localization.Strings.InstallingWait;
+        _loadingStatus = Localization.Strings.InstallingWait;
+
         // 启动程序后预读取JSON内容
         Task.Run(() => LoadLatestVersionInfoAsync());
     }
@@ -108,21 +125,96 @@ public partial class MainViewModel : ObservableRecipient
         }
     }
 
+    private string _installedAumid = null;
+
     [RelayCommand]
-    private void OpenLauncher()
+    private async Task OpenLauncher()
     {
         Debug.WriteLine("OpenLauncher called");
-        // 打开启动器
-        var launcherPath = Path.Combine(InstallPath, "XianYuLauncher.exe");
-        Debug.WriteLine($"Attempting to open launcher at: {launcherPath}");
-        if (File.Exists(launcherPath))
+        
+        bool launched = false;
+
+        if (!string.IsNullOrEmpty(_installedAumid))
         {
-            Debug.WriteLine("Launcher file exists, starting process");
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(launcherPath) { UseShellExecute = true });
+            Debug.WriteLine($"Launching AUMID: {_installedAumid}");
+            try
+            {
+                var packageManager = new PackageManager();
+                var packages = packageManager.FindPackagesForUser(string.Empty);
+                var pkg = packages.FirstOrDefault(p => 
+                {
+                    try { return p.Id.FamilyName == _installedAumid.Split('!')[0]; }
+                    catch { return false; }
+                });
+
+                if (pkg != null)
+                {
+                    var entries = await pkg.GetAppListEntriesAsync();
+                    var entry = entries.FirstOrDefault(e => e.AppUserModelId == _installedAumid);
+                    if (entry != null)
+                    {
+                        var success = await entry.LaunchAsync();
+                        launched = success;
+                        Debug.WriteLine($"Launch success: {success}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Launch failed: {ex.Message}");
+            }
         }
         else
         {
-            Debug.WriteLine("Launcher file not found");
+             Debug.WriteLine("No AUMID to launch.");
+        }
+
+        if (launched)
+        {
+             // 启动成功后推出安装器
+             App.MainWindow.Close();
+        }
+        else
+        {
+             // 启动失败，可能用户需要手动启动
+             Debug.WriteLine("Failed to launch app automatically.");
+             // 也可以选择在这里关闭，或者提示用户
+             App.MainWindow.Close();
+        }
+    }
+
+    private async Task CreateDesktopShortcut(string aumid, string displayName)
+    {
+        try 
+        {
+            string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            string shortcutPath = Path.Combine(desktopPath, $"{displayName}.lnk");
+            
+            // 使用 PowerShell 创建指向 AppsFolder 的快捷方式
+            // 这通常能保留正确的图标和关联
+            string script = $@"
+$WshShell = New-Object -comObject WScript.Shell
+$Shortcut = $WshShell.CreateShortcut('{shortcutPath}')
+$Shortcut.TargetPath = 'shell:AppsFolder\{aumid}'
+$Shortcut.Save()";
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = $"-Command \"{script}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            
+            using (var process = Process.Start(psi))
+            {
+                await process.WaitForExitAsync();
+            }
+            Debug.WriteLine($"Shortcut created: {shortcutPath}");
+        }
+        catch(Exception ex)
+        {
+            Debug.WriteLine($"Failed to create shortcut: {ex.Message}");
         }
     }
 
@@ -330,18 +422,46 @@ public partial class MainViewModel : ObservableRecipient
             // 检查证书是否已安装
             if (!IsCertificateInstalled(cerFilePath))
             {
-                Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Certificate not installed, opening certificate...");
-                CurrentStep = 2; // 进入证书配置步骤
-                ProgressMessage = "请点击证书->安装证书->本地计算机->将所有的证书都放入下列存储->受信任的根证书颁发机构->完成";
+                Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Certificate not installed, attempting auto-install...");
                 
-                // 打开证书文件
-                Process.Start(new ProcessStartInfo(cerFilePath) { UseShellExecute = true });
-                
-                // 轮询等待证书安装完成
-                Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Waiting for certificate installation...");
-                while (!IsCertificateInstalled(cerFilePath))
+                // 1. 尝试自动安装证书 (请求管理员权限)
+                ProgressMessage = "正在申请权限安装证书...";
+                try
                 {
-                    await Task.Delay(1000); // 每秒检查一次
+                    var certPsi = new ProcessStartInfo
+                    {
+                        FileName = "certutil",
+                        Arguments = $"-addstore \"Root\" \"{cerFilePath}\"",
+                        Verb = "runas",
+                        UseShellExecute = true,
+                        WindowStyle = ProcessWindowStyle.Hidden
+                    };
+                    using (var p = Process.Start(certPsi))
+                    {
+                        await p.WaitForExitAsync();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Certificate auto-install exception: {ex.Message}");
+                }
+
+                // 2. 如果自动安装失败（如用户取消UAC），回退到手动指引模式
+                if (!IsCertificateInstalled(cerFilePath))
+                {
+                    Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Certificate not installed, falling back to manual...");
+                    CurrentStep = 2; // 进入证书配置步骤
+                    ProgressMessage = "请手动安装：点击安装证书 -> 本地计算机 -> 将证书放入“受信任的根证书颁发机构”";
+                    
+                    // 打开证书文件
+                    Process.Start(new ProcessStartInfo(cerFilePath) { UseShellExecute = true });
+                    
+                    // 轮询等待证书安装完成
+                    Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Waiting for certificate installation...");
+                    while (!IsCertificateInstalled(cerFilePath))
+                    {
+                        await Task.Delay(1000); // 每秒检查一次
+                    }
                 }
                 Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Certificate installed successfully");
             }
@@ -349,29 +469,61 @@ public partial class MainViewModel : ObservableRecipient
             // 继续安装流程
             CurrentStep = 3; // 回到安装步骤
             ProgressValue = 70;
-            ProgressMessage = "正在准备执行安装脚本...";
+            ProgressMessage = "正在准备执行安装...";
             await Task.Delay(100);
 
-            // 查找PowerShell脚本
-            string[] ps1Files = Directory.GetFiles(tempDir, "Install.ps1");
-            if (ps1Files.Length == 0)
-            {
-                Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] No Install.ps1 found in extracted files");
-                throw new Exception("未找到安装脚本");
-            }
-            string ps1FilePath = ps1Files[0];
-            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Found Install.ps1: {ps1FilePath}");
+            // 使用原生API安装应用包 (替代 PowerShell 脚本)
+            ProgressMessage = "正在安装应用程序...";
+            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Starting native installation...");
+            
+            // 确保我们在 UI 线程更新 (虽然 InstallAsync 本身在 Task.Run 里跑，可能不是 UI 线程)
+            // 但 ObservableProperty 只要 Binding 是 TwoWay 或者是异步安全的就行？
+            // WinUI 3 对于后台线程更新 UI 属性通常会抛出 RPC 错误，如果不通过 Dispatcher。
+            // 之前的 RunPowerShellScriptAsAdmin 也是异步等待，没有直接更新 UI。
+            
+            await InstallAppPackageNativeAsync(tempDir);
+            
+            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Native installation completed successfully");
 
-            // 以管理员身份运行PowerShell脚本
-            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Running Install.ps1 as administrator...");
-            ProgressMessage = "正在执行安装脚本...";
-            await RunPowerShellScriptAsAdmin(ps1FilePath);
-            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Install.ps1 executed successfully");
+            // 4. 安装后处理：获取 AUMID 并创建快捷方式
+            try 
+            {
+                Debug.WriteLine("[Post-Install] Locating installed package...");
+                var packageManager = new PackageManager();
+                // 模糊匹配包名 (XianYuLauncher)
+                var packages = packageManager.FindPackagesForUser(string.Empty)
+                    .Where(p => p.Id.Name.Contains("XianYuLauncher", StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(p => p.InstalledDate) // 取最新安装的
+                    .ToList();
+
+                if (packages.Count > 0)
+                {
+                    var pkg = packages[0];
+                    Debug.WriteLine($"Found package: {pkg.Id.FullName}");
+                    
+                    var entries = await pkg.GetAppListEntriesAsync();
+                    if (entries.Count > 0)
+                    {
+                        var entry = entries[0];
+                        _installedAumid = entry.AppUserModelId;
+                        Debug.WriteLine($"Resolved AUMID: {_installedAumid}");
+                        
+                        // 创建桌面快捷方式
+                        ProgressMessage = "正在创建桌面快捷方式...";
+                        await CreateDesktopShortcut(_installedAumid, "XianYu Launcher");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                 Debug.WriteLine($"Post-install setup failed: {ex.Message}");
+            }
 
             // 更新进度
             ProgressValue = 100;
             ProgressMessage = "安装完成！";
             IsInstallationComplete = true;
+            CurrentStep = 4; // 切换到完成页面
             Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Installation completed successfully");
         }
         catch (System.Runtime.InteropServices.COMException ex)
@@ -403,6 +555,21 @@ public partial class MainViewModel : ObservableRecipient
         finally
         {
             IsInstalling = false;
+            
+            // 清理临时文件
+            if (!string.IsNullOrEmpty(tempDir) && Directory.Exists(tempDir))
+            {
+                try
+                {
+                    Directory.Delete(tempDir, true);
+                    Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Cleared temp directory: {tempDir}");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Failed to clear temp directory: {ex.Message}");
+                }
+            }
+            
             Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] InstallAsync finished, IsInstalling: {IsInstalling}");
         }
     }
@@ -568,26 +735,102 @@ public partial class MainViewModel : ObservableRecipient
         }
     }
 
-    private async Task RunPowerShellScriptAsAdmin(string scriptPath)
+    private async Task InstallAppPackageNativeAsync(string sourceDir)
     {
-        var psi = new ProcessStartInfo
+        // 1. 查找主要的 Appx/Msix 包 (优先级：Bundle > Package)
+        var pkgFiles = Directory.GetFiles(sourceDir, "*.*", SearchOption.TopDirectoryOnly)
+            .Where(f => f.EndsWith(".msixbundle", StringComparison.OrdinalIgnoreCase) || 
+                        f.EndsWith(".appxbundle", StringComparison.OrdinalIgnoreCase) || 
+                        f.EndsWith(".msix", StringComparison.OrdinalIgnoreCase) || 
+                        f.EndsWith(".appx", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(f => f.EndsWith("bundle", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (pkgFiles.Length == 0)
         {
-            FileName = "powershell.exe",
-            Arguments = $"-ExecutionPolicy Bypass -File \"{scriptPath}\"",
-            Verb = "runas", // 以管理员身份运行
-            UseShellExecute = true,
-            CreateNoWindow = true
-        };
+            throw new FileNotFoundException("未在安装目录中找到应用程序包 (.msix/.appx)");
+        }
+
+        string mainPackagePath = pkgFiles[0];
+        Uri mainPackageUri = new Uri(mainPackagePath);
+        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Found package: {mainPackagePath}");
+
+        // 2. 查找依赖包
+        var dependencyUris = new List<Uri>();
+        string dependenciesRoot = Path.Combine(sourceDir, "Dependencies");
         
-        using (var process = Process.Start(psi))
+        if (Directory.Exists(dependenciesRoot))
         {
-            await process.WaitForExitAsync();
-            
-            if (process.ExitCode != 0)
+            // 简单架构判断：主要基于包名，辅以系统环境
+            string pkgName = Path.GetFileName(mainPackagePath).ToLower();
+            bool isArm64 = pkgName.Contains("arm64");
+            bool isX64 = pkgName.Contains("x64") && !isArm64;
+            bool isX86 = pkgName.Contains("x86") && !isX64 && !isArm64;
+
+            // 扫描所有依赖文件
+            var allDepFiles = Directory.GetFiles(dependenciesRoot, "*.*", SearchOption.AllDirectories)
+                .Where(f => f.EndsWith(".appx", StringComparison.OrdinalIgnoreCase) || 
+                            f.EndsWith(".msix", StringComparison.OrdinalIgnoreCase));
+
+            foreach (var depFile in allDepFiles)
             {
-                throw new Exception($"PowerShell脚本执行失败，退出码: {process.ExitCode}");
+                string depFileName = Path.GetFileName(depFile).ToLower();
+                string depDirName = Path.GetFileName(Path.GetDirectoryName(depFile)).ToLower();
+
+                // 筛选逻辑：
+                // 1. 根目录下的直接包含
+                // 2. 文件夹名为 "neutral"
+                // 3. 文件夹名与包架构匹配
+                bool shouldInclude = depDirName == "dependencies" || // 直接在Dependencies根目录下
+                                     depDirName == "neutral" ||
+                                     (isX64 && depDirName == "x64") ||
+                                     (isX86 && depDirName == "x86") ||
+                                     (isArm64 && depDirName == "arm64");
+                
+                if (shouldInclude)
+                {
+                    dependencyUris.Add(new Uri(depFile));
+                }
             }
         }
+        
+        Debug.WriteLine($"Found {dependencyUris.Count} dependencies");
+
+        // 3. 执行安装
+        var packageManager = new PackageManager();
+        // DeploymentOptions 是枚举(Enum)，不是类，需要使用位运算组合
+        var options = DeploymentOptions.ForceApplicationShutdown | DeploymentOptions.ForceTargetApplicationShutdown;
+        
+        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Calling PackageManager.AddPackageAsync...");
+        
+        // 注意：AddPackageAsync 会安装到当前用户（如果以管理员运行，则是管理员用户）
+        // 如果此Installer始终以管理员运行，这通常是可以接受的，或者需要注意用户上下文
+        var deploymentOperation = packageManager.AddPackageAsync(mainPackageUri, dependencyUris, options);
+        
+        deploymentOperation.Progress = (res, progress) =>
+        {
+            // 将安装过程映射到进度条的 70% - 99%
+            int mappedProgress = 70 + (int)((progress.percentage * 29) / 100.0);
+            
+            // 使用 DispatcherQueue 在 UI 线程更新进度，避免跨线程异常
+            App.MainWindow.DispatcherQueue.TryEnqueue(() =>
+            {
+                if (mappedProgress > ProgressValue)
+                {
+                    ProgressValue = mappedProgress;
+                }
+            });
+        };
+
+        var result = await deploymentOperation;
+        
+        if (!result.IsRegistered)
+        {
+            Debug.WriteLine($"Package deployment failed: {result.ErrorText}");
+            throw new Exception($"应用安装失败: {result.ErrorText} (HRESULT: {result.ExtendedErrorCode})");
+        }
+        
+        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] AddPackageAsync finished successfully");
     }
 
     private string GetDownloadUrlForArchitecture(string architecture)
@@ -597,18 +840,26 @@ public partial class MainViewModel : ObservableRecipient
         
         if (_latestVersionInfo != null && _latestVersionInfo.DownloadMirrors != null && _latestVersionInfo.DownloadMirrors.Count > 0)
         {
-            var officialMirror = _latestVersionInfo.DownloadMirrors.FirstOrDefault(m => m.Name == "official");
-            if (officialMirror != null)
+            // 1. 尝试查找名为 "official" 的镜像源（优先）
+            var mirror = _latestVersionInfo.DownloadMirrors.FirstOrDefault(m => m.Name == "official");
+
+            // 2. 如果没找到 "official"，则使用列表中的第一个镜像源
+            if (mirror == null)
+            {
+                mirror = _latestVersionInfo.DownloadMirrors.FirstOrDefault();
+            }
+
+            if (mirror != null)
             {
                 // 优先使用ArchUrls中的对应架构链接
-                if (officialMirror.ArchUrls != null && officialMirror.ArchUrls.TryGetValue(architecture, out string archUrl))
+                if (mirror.ArchUrls != null && mirror.ArchUrls.TryGetValue(architecture, out string archUrl))
                 {
                     return archUrl;
                 }
                 // 如果没有对应架构的链接，使用默认Url
-                if (!string.IsNullOrEmpty(officialMirror.Url))
+                if (!string.IsNullOrEmpty(mirror.Url))
                 {
-                    return officialMirror.Url;
+                    return mirror.Url;
                 }
             }
         }
