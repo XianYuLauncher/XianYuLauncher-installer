@@ -32,10 +32,6 @@ public sealed partial class MainPage : Page, INotifyPropertyChanged
         var iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets/Square150x150Logo.scale-200.png");
         LogoImage.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(iconPath));
         
-        // 设置GitHub图标源
-        var githubIconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets/icons/github.png");
-        GitHubIconImage.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(githubIconPath));
-        
         // 页面加载完成后显示欢迎弹窗
         this.Loaded += MainPage_Loaded;
     }
@@ -132,7 +128,7 @@ public sealed partial class MainPage : Page, INotifyPropertyChanged
     private void GitHubButton_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
         // 导航到指定的GitHub仓库URL
-        var uri = new Uri("https://github.com/XianYu-Launcher");
+        var uri = new Uri("https://github.com/XianYuLauncher/XianYuLauncher");
         var launcherOptions = new Windows.System.LauncherOptions();
         launcherOptions.TreatAsUntrusted = false;
         Windows.System.Launcher.LaunchUriAsync(uri, launcherOptions);

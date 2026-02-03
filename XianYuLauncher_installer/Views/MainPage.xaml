@@ -54,9 +54,10 @@
             
             <!-- 左侧 GitHub 图标 -->
             <Button x:Name="GitHubButton" Click="GitHubButton_Click" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,10,0" Width="40" Height="40" Padding="0" ToolTipService.ToolTip="访问GitHub仓库">
-                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                    <Image x:Name="GitHubIconImage" Width="24" Height="24" Stretch="Uniform" />
-                </StackPanel>
+                <Viewbox Width="24" Height="24" Stretch="Uniform">
+                    <PathIcon Foreground="{ThemeResource SystemControlForegroundBaseHighBrush}"
+                              Data="M12,0.5C5.65,0.5,0.5,5.65,0.5,12C0.5,17.1,3.87,21.4,8.55,22.9C9.15,23,9.35,22.65,9.35,22.35C9.35,22.1,9.34,21.45,9.34,20.65C6.18,21.27,5.5,19.17,5.5,19.17C4.97,17.77,4.17,17.4,4.17,17.4C3.09,16.68,4.25,16.7,4.25,16.7C5.44,16.78,6.05,17.94,6.05,17.94C7.1,19.7,8.87,19.19,9.54,18.88C9.64,18.14,9.95,17.64,10.3,17.35C7.78,17.07,5.12,16.09,5.12,11.4C5.12,10.07,5.58,9,6.35,8.15C6.23,7.87,5.83,6.62,6.46,4.95C6.46,4.95,7.47,4.63,9.31,5.95C10.28,5.68,11.33,5.55,12.38,5.55C13.43,5.55,14.48,5.68,15.45,5.95C17.29,4.63,18.3,4.95,18.3,4.95C18.93,6.62,18.53,7.87,18.41,8.15C19.18,9,19.64,10.07,19.64,11.4C19.64,16.11,16.97,17.06,14.44,17.33C14.89,17.71,15.29,18.48,15.29,19.65C15.29,21.33,15.27,22.23,15.27,22.35C15.27,22.65,15.47,23.01,16.09,22.9C20.77,21.4,24.14,17.1,24.14,12C24.14,5.65,18.99,0.5,12,0.5Z" />
+                </Viewbox>
             </Button>
             
             <!-- 右侧按钮组 -->
