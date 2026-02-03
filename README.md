@@ -1,7 +1,7 @@
 # XianYuLauncher Installer
 
-[![GitHub Stars](https://img.shields.io/github/stars/N123999/XianYuLauncher.svg?style=flat-square&label=⭐%20Stars)](https://github.com/XianYuLauncher/Installer)
-[![GitHub Release](https://img.shields.io/github/v/release/N123999/XianYuLauncher-Help?style=flat-square%20Release&logo=github)](https://github.com/XianYuLauncher/Installer/releases)
+[![GitHub Stars](https://img.shields.io/github/stars/XianYuLauncher/Installer.svg?style=flat-square&label=⭐%20Stars)](https://github.com/XianYuLauncher/Installer)
+[![GitHub Release](https://img.shields.io/github/v/release/XianYuLauncher/Installer?style=flat-square%20Release&logo=github)](https://github.com/XianYuLauncher/Installer/releases)
 [![Docs Online](https://img.shields.io/badge/Docs-Online-0EA5E9?style=flat-square&logo=gitbook&logoColor=white)](https://docs.xianyulauncher.com)
 [![Bilibili](https://img.shields.io/badge/bilibili-@Spirit灵动工作室-FF69B4?style=flat-square&logo=bilibili&logoColor=white)](https://space.bilibili.com/3493299136498148)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -30,7 +30,7 @@ This installer automates most of the process, providing a seamless experience fo
 
 ## Installation (For Users)
 
-1. **Download** the latest installer from [Releases](https://github.com/XianYu-Launcher/XianYuLauncher-Installer/releases)
+1. **Download** the latest installer from [Releases](https://github.com/XianYuLauncher/Installer/releases)
 2. **Run** `XianYuLauncher-installer.exe`
 3. **Select** installation directory
 4. **Click** "Install" and let the installer handle everything!
@@ -46,8 +46,7 @@ This installer automates most of the process, providing a seamless experience fo
 ### Setup
 ```bash
 # Clone the repository
-git clone https://github.com/XianYuLauncher/XianYuLauncher-installer.git
-cd XianYuLauncher-installer
+git clone https://github.com/XianYuLauncher/installer.git
 
 # Restore NuGet packages
 dotnet restore
